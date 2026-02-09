@@ -1,3 +1,22 @@
+# =============================================================================
+# Global exclusions - Skip generated/cached/third-party files
+# =============================================================================
+exclude: |
+  (?x)^(
+    \.venv/.*|
+    \.pytest_cache/.*|
+    \.ruff_cache/.*|
+    \.mypy_cache/.*|
+    __pycache__/.*|
+    \.coverage|
+    coverage\.xml|
+    htmlcov/.*|
+    \.git/.*|
+    node_modules/.*|
+    dist/.*|
+    build/.*
+  )$
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: "v6.0.0"

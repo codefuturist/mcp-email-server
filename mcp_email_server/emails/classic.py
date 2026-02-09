@@ -606,11 +606,16 @@ class EmailClient:
         # Note: BCC recipients are not added to headers (they remain hidden)
         # but will be included in the actual recipients for SMTP delivery
 
+        # Disable certificate validation for localhost (e.g., Proton Mail Bridge)
+        # which uses self-signed certificates
+        validate_certs = self.email_server.host not in ("127.0.0.1", "localhost")
+
         async with aiosmtplib.SMTP(
             hostname=self.email_server.host,
             port=self.email_server.port,
             start_tls=self.smtp_start_tls,
             use_tls=self.smtp_use_tls,
+            validate_certs=validate_certs,
         ) as smtp:
             await smtp.login(self.email_server.user_name, self.email_server.password)
 
