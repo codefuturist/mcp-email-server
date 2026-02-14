@@ -450,3 +450,46 @@ class TestTomlBackwardCompat:
             "use_ssl": True,
         })
         assert server.security == ConnectionSecurity.TLS
+
+
+class TestParseSecurityEnv:
+    """Tests for _parse_security_env helper function."""
+
+    def test_none_returns_default(self):
+        from mcp_email_server.config import _parse_security_env
+
+        assert _parse_security_env(None) is None
+        assert _parse_security_env(None, ConnectionSecurity.TLS) == ConnectionSecurity.TLS
+
+    def test_valid_values(self):
+        from mcp_email_server.config import _parse_security_env
+
+        assert _parse_security_env("tls") == ConnectionSecurity.TLS
+        assert _parse_security_env("STARTTLS") == ConnectionSecurity.STARTTLS
+        assert _parse_security_env("None") == ConnectionSecurity.NONE
+
+    def test_invalid_value_returns_default(self):
+        from mcp_email_server.config import _parse_security_env
+
+        assert _parse_security_env("invalid") is None
+        assert _parse_security_env("invalid", ConnectionSecurity.TLS) == ConnectionSecurity.TLS
+
+    def test_invalid_value_logs_warning(self):
+        from mcp_email_server.config import _parse_security_env
+
+        with patch("mcp_email_server.config.logger") as mock_logger:
+            _parse_security_env("bogus", ConnectionSecurity.TLS)
+            mock_logger.warning.assert_called_once()
+            assert "bogus" in mock_logger.warning.call_args[0][0]
+
+
+class TestValidatorEdgeCases:
+    """Tests for model validator edge cases."""
+
+    def test_validator_with_non_dict_data(self):
+        """Validator should pass through non-dict data unchanged."""
+        # When Pydantic passes a model instance (not a dict), the validator should return it as-is
+        server = EmailServer(user_name="u", password="p", host="h", port=993)
+        # Re-validate the same instance (triggers non-dict path)
+        copy = EmailServer.model_validate(server)
+        assert copy.security == ConnectionSecurity.TLS
