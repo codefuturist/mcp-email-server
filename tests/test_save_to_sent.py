@@ -359,7 +359,7 @@ class TestEmailClientAppendToSent:
             password="test_password",
             host="smtp.example.com",
             port=465,
-            use_ssl=False,
+            security="none",
         )
         client = EmailClient(server)
 
@@ -368,7 +368,7 @@ class TestEmailClientAppendToSent:
             password="test_password",
             host="imap.example.com",
             port=143,
-            use_ssl=False,
+            security="none",
         )
 
         msg = MIMEText("Test body")

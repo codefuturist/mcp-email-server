@@ -97,8 +97,10 @@ class EmailServer(BaseModel):
                 data["security"] = ConnectionSecurity.TLS
             elif start_ssl_val:
                 data["security"] = ConnectionSecurity.STARTTLS
-            else:
+            elif use_ssl is False and start_ssl is False:
+                # Only disable encryption when BOTH are explicitly set to False
                 data["security"] = ConnectionSecurity.NONE
+            # Otherwise, leave security at its default (TLS) for safety
 
         return data
 

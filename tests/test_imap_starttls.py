@@ -43,8 +43,14 @@ class TestConnectionSecurity:
         assert server.security == ConnectionSecurity.NONE
 
     def test_legacy_use_ssl_false_only(self):
-        server = EmailServer(user_name="u", password="p", host="h", port=143, use_ssl=False)
-        assert server.security == ConnectionSecurity.NONE
+        """use_ssl=False alone should default to TLS (secure by default)."""
+        server = EmailServer(user_name="u", password="p", host="h", port=993, use_ssl=False)
+        assert server.security == ConnectionSecurity.TLS
+
+    def test_legacy_start_ssl_false_only(self):
+        """start_ssl=False alone should default to TLS (secure by default)."""
+        server = EmailServer(user_name="u", password="p", host="h", port=993, start_ssl=False)
+        assert server.security == ConnectionSecurity.TLS
 
     def test_legacy_start_ssl_true_only(self):
         server = EmailServer(user_name="u", password="p", host="h", port=143, start_ssl=True)
@@ -108,8 +114,8 @@ class TestEmailSettingsInit:
             smtp_ssl=False,
             smtp_start_ssl=True,
         )
-        # imap_ssl=False → use_ssl=False → security=NONE (no start_ssl for IMAP in legacy)
-        assert settings.incoming.security == ConnectionSecurity.NONE
+        # imap_ssl=False alone → defaults to TLS (secure by default, start_ssl not set)
+        assert settings.incoming.security == ConnectionSecurity.TLS
         # smtp_ssl=False + smtp_start_ssl=True → STARTTLS
         assert settings.outgoing.security == ConnectionSecurity.STARTTLS
 
@@ -171,7 +177,8 @@ class TestEmailSettingsFromEnv:
 
         settings = EmailSettings.from_env()
         assert settings is not None
-        assert settings.incoming.security == ConnectionSecurity.NONE
+        # IMAP_SSL=false alone → defaults to TLS (secure by default, no start_ssl set)
+        assert settings.incoming.security == ConnectionSecurity.TLS
         assert settings.outgoing.security == ConnectionSecurity.STARTTLS
 
     def test_from_env_security_takes_precedence_over_legacy(self, monkeypatch):
