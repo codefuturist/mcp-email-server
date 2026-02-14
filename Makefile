@@ -40,8 +40,25 @@ build: clean-build ## Build wheel file
 
 .PHONY: clean-build
 clean-build: ## Clean build artifacts
-	@echo "🚀 Removing build artifacts"
-	@uv run python -c "import shutil; import os; shutil.rmtree('dist') if os.path.exists('dist') else None"
+	@rm -rf dist build *.egg-info
+
+.PHONY: clean
+clean: clean-build ## Remove build, test, and cache artifacts
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.py[co]" -delete 2>/dev/null || true
+	@rm -rf .pytest_cache .coverage coverage.xml htmlcov .mypy_cache .ruff_cache .hypothesis
+	@echo "✨ Clean complete"
+
+.PHONY: clean-docker
+clean-docker: ## Stop and remove Docker test containers and volumes
+	@echo "🐳 Cleaning Docker test environment"
+	@docker compose -f tests/docker/docker-compose.yml down -v --remove-orphans 2>/dev/null || true
+	@echo "✨ Docker clean complete"
+
+.PHONY: clean-all
+clean-all: clean clean-docker ## Remove all artifacts including tox, docs, and Docker
+	@rm -rf .tox .nox site
+	@echo "✨ Deep clean complete"
 
 .PHONY: publish
 publish: ## Publish a release to PyPI.

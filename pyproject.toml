@@ -52,11 +52,12 @@ dev = [
     "mkdocstrings[python]>=0.26.1",
 ]
 integration = [
-    "pytest-localserver>=0.9.0",
-    "aiosmtpd>=1.4.0",
+    "pytest-localserver>=0.10.0",
+    "aiosmtpd>=1.4.6",
+    "cryptography>=44.0.0",
 ]
 docker = [
-    "pytest-docker>=3.1.0",
+    "pytest-docker>=3.2.5",
 ]
 
 [build-system]

@@ -714,6 +714,56 @@ class TestConnectionTest:
             assert "unexpected" in result
 
 
+class TestForceCloseImap:
+    """Tests for _force_close_imap defensive cleanup helper."""
+
+    def test_closes_transport(self):
+        from mcp_email_server.emails.classic import _force_close_imap
+
+        mock_imap = MagicMock()
+        mock_imap.protocol.transport.close = MagicMock()
+        mock_imap._client_task.done.return_value = True
+
+        _force_close_imap(mock_imap)
+        mock_imap.protocol.transport.close.assert_called_once()
+
+    def test_cancels_pending_client_task(self):
+        from mcp_email_server.emails.classic import _force_close_imap
+
+        mock_imap = MagicMock()
+        mock_imap._client_task.done.return_value = False
+
+        _force_close_imap(mock_imap)
+        mock_imap._client_task.cancel.assert_called_once()
+
+    def test_skips_cancel_when_task_done(self):
+        from mcp_email_server.emails.classic import _force_close_imap
+
+        mock_imap = MagicMock()
+        mock_imap._client_task.done.return_value = True
+
+        _force_close_imap(mock_imap)
+        mock_imap._client_task.cancel.assert_not_called()
+
+    def test_handles_missing_protocol(self):
+        """Should not raise when imap has no protocol attribute."""
+        from mcp_email_server.emails.classic import _force_close_imap
+
+        mock_imap = MagicMock(spec=[])  # no attributes
+        mock_imap._client_task = MagicMock()
+        mock_imap._client_task.done.return_value = True
+        _force_close_imap(mock_imap)  # should not raise
+
+    def test_handles_none_transport(self):
+        """Should not raise when transport is None."""
+        from mcp_email_server.emails.classic import _force_close_imap
+
+        mock_imap = MagicMock()
+        mock_imap.protocol.transport = None
+        mock_imap._client_task.done.return_value = True
+        _force_close_imap(mock_imap)  # should not raise
+
+
 class TestUpdateEmail:
     """Tests for Settings.update_email method."""
 

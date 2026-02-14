@@ -166,8 +166,30 @@ async def _create_imap_connection(
     return imap
 
 
+def _force_close_imap(imap: aioimaplib.IMAP4 | aioimaplib.IMAP4_SSL) -> None:
+    """Force-close an IMAP connection's transport and cancel internal tasks.
+
+    Defensive cleanup for aioimaplib connections that may not shut down cleanly
+    after logout(). aioimaplib's _client_task and transport do not support
+    asyncio cancellation properly.
+    See: https://github.com/iroco-co/aioimaplib/issues/128
+    """
+    with contextlib.suppress(Exception):
+        if (
+            hasattr(imap, "protocol")
+            and imap.protocol
+            and hasattr(imap.protocol, "transport")
+            and imap.protocol.transport
+        ):
+            imap.protocol.transport.close()
+    with contextlib.suppress(Exception):
+        if hasattr(imap, "_client_task") and not imap._client_task.done():
+            imap._client_task.cancel()
+
+
 async def test_imap_connection(server: EmailServer, timeout: int = 10) -> str:
     """Test IMAP connection and login. Returns a user-friendly status message."""
+    imap = None
     try:
         imap = await asyncio.wait_for(_create_imap_connection(server), timeout=timeout)
         try:
@@ -190,6 +212,9 @@ async def test_imap_connection(server: EmailServer, timeout: int = 10) -> str:
         return f"❌ IMAP error: {e}"
     except Exception as e:
         return f"❌ IMAP error: {e}"
+    finally:
+        if imap is not None:
+            _force_close_imap(imap)
 
 
 async def test_smtp_connection(server: EmailServer, timeout: int = 10) -> str:
