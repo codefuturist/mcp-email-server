@@ -138,6 +138,13 @@ def create_ui():  # noqa: C901
                         placeholder="Leave empty to use the same as above",
                     )
 
+                    # Auto-update IMAP port when security mode changes
+                    def update_imap_port(security):
+                        port_map = {"tls": 993, "starttls": 143, "none": 143}
+                        return port_map.get(security, 993)
+
+                    imap_security.change(fn=update_imap_port, inputs=[imap_security], outputs=[imap_port])
+
                 # SMTP settings
                 with gr.Column():
                     gr.Markdown("### SMTP Settings")
@@ -158,6 +165,13 @@ def create_ui():  # noqa: C901
                         type="password",
                         placeholder="Leave empty to use the same as above",
                     )
+
+                    # Auto-update SMTP port when security mode changes
+                    def update_smtp_port(security):
+                        port_map = {"tls": 465, "starttls": 587, "none": 25}
+                        return port_map.get(security, 465)
+
+                    smtp_security.change(fn=update_smtp_port, inputs=[smtp_security], outputs=[smtp_port])
 
             # Status message
             status_message = gr.Markdown("")
