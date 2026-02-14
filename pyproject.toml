@@ -51,6 +51,13 @@ dev = [
     "mkdocs-material>=8.5.10",
     "mkdocstrings[python]>=0.26.1",
 ]
+integration = [
+    "pytest-localserver>=0.9.0",
+    "aiosmtpd>=1.4.0",
+]
+docker = [
+    "pytest-docker>=3.1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -114,6 +121,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "S106", "SIM117"]
+"tests/**/*" = ["S101", "S106", "SIM117"]
 "tests/conftest.py" = ["E402"]
 
 [tool.ruff.format]

@@ -18,6 +18,21 @@ test: ## Test the code with pytest
 	@echo "🚀 Testing code: Running pytest"
 	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml -vv -s
 
+.PHONY: test-integration
+test-integration: ## Run integration tests (real protocol servers, no Docker)
+	@echo "🚀 Running integration tests"
+	@uv run --group integration python -m pytest -m integration -o "addopts=" -vv -s
+
+.PHONY: test-docker
+test-docker: ## Run Docker integration tests (requires Docker)
+	@echo "🐳 Running Docker integration tests"
+	@uv run --group docker python -m pytest -m docker -o "addopts=" -vv -s
+
+.PHONY: test-all
+test-all: ## Run all tests (unit + integration + Docker)
+	@echo "🚀 Running all tests"
+	@uv run --group integration --group docker python -m pytest -o "addopts=" --cov --cov-config=pyproject.toml --cov-report=xml -vv -s
+
 .PHONY: build
 build: clean-build ## Build wheel file
 	@echo "🚀 Creating wheel file"
