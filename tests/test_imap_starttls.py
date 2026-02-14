@@ -216,6 +216,17 @@ class TestEmailSettingsFromEnv:
         assert settings is not None
         assert settings.incoming.security == ConnectionSecurity.TLS  # Falls back to default
 
+    def test_from_env_invalid_smtp_security_uses_default(self, monkeypatch):
+        monkeypatch.setenv("MCP_EMAIL_SERVER_EMAIL_ADDRESS", "test@example.com")
+        monkeypatch.setenv("MCP_EMAIL_SERVER_PASSWORD", "pass")
+        monkeypatch.setenv("MCP_EMAIL_SERVER_IMAP_HOST", "imap.example.com")
+        monkeypatch.setenv("MCP_EMAIL_SERVER_SMTP_HOST", "smtp.example.com")
+        monkeypatch.setenv("MCP_EMAIL_SERVER_SMTP_SECURITY", "invalid_value")
+
+        settings = EmailSettings.from_env()
+        assert settings is not None
+        assert settings.outgoing.security == ConnectionSecurity.TLS  # Falls back to default
+
 
 class TestImapConnection:
     """Tests for IMAP connection creation with different security modes."""
@@ -634,6 +645,74 @@ class TestConnectionTest:
             assert "❌" in result
             assert "Connection refused" in result
 
+    @pytest.mark.asyncio
+    async def test_imap_connection_generic_os_error(self):
+        from mcp_email_server.emails.classic import test_imap_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=993)
+
+        with patch(
+            "mcp_email_server.emails.classic._create_imap_connection",
+            side_effect=OSError("Network unreachable"),
+        ):
+            result = await test_imap_connection(server)
+            assert "❌" in result
+            assert "Network unreachable" in result
+            assert "STARTTLS" not in result
+
+    @pytest.mark.asyncio
+    async def test_imap_connection_generic_exception(self):
+        from mcp_email_server.emails.classic import test_imap_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=993)
+
+        with patch(
+            "mcp_email_server.emails.classic._create_imap_connection",
+            side_effect=RuntimeError("unexpected"),
+        ):
+            result = await test_imap_connection(server)
+            assert "❌" in result
+            assert "unexpected" in result
+
+    @pytest.mark.asyncio
+    async def test_smtp_connection_ssl_error(self):
+        from mcp_email_server.emails.classic import test_smtp_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=465)
+        mock_smtp = AsyncMock()
+        mock_smtp.connect = AsyncMock(side_effect=ssl.SSLCertVerificationError())
+
+        with patch("mcp_email_server.emails.classic.aiosmtplib.SMTP", return_value=mock_smtp):
+            result = await test_smtp_connection(server)
+            assert "❌" in result
+            assert "SSL certificate" in result
+
+    @pytest.mark.asyncio
+    async def test_smtp_connection_timeout(self):
+        from mcp_email_server.emails.classic import test_smtp_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=465)
+        mock_smtp = AsyncMock()
+        mock_smtp.connect = AsyncMock(side_effect=asyncio.TimeoutError())
+
+        with patch("mcp_email_server.emails.classic.aiosmtplib.SMTP", return_value=mock_smtp):
+            result = await test_smtp_connection(server)
+            assert "❌" in result
+            assert "timed out" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_smtp_connection_generic_exception(self):
+        from mcp_email_server.emails.classic import test_smtp_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=465)
+        mock_smtp = AsyncMock()
+        mock_smtp.connect = AsyncMock(side_effect=RuntimeError("unexpected"))
+
+        with patch("mcp_email_server.emails.classic.aiosmtplib.SMTP", return_value=mock_smtp):
+            result = await test_smtp_connection(server)
+            assert "❌" in result
+            assert "unexpected" in result
+
 
 class TestUpdateEmail:
     """Tests for Settings.update_email method."""
@@ -667,3 +746,35 @@ class TestUpdateEmail:
         assert len(settings.emails) == 1
         assert settings.emails[0].full_name == "New"
         assert settings.emails[0].email_address == "new@test.com"
+
+
+class TestInitLegacyPaths:
+    """Tests for EmailSettings.init() legacy ssl/start_ssl paths."""
+
+    def test_init_with_legacy_smtp_ssl(self):
+        """init() with smtp_ssl should pass use_ssl to outgoing server."""
+        cfg = EmailSettings.init(
+            account_name="test",
+            full_name="Test",
+            email_address="test@test.com",
+            user_name="u",
+            password="p",
+            imap_host="imap.test.com",
+            smtp_host="smtp.test.com",
+            smtp_ssl=True,
+        )
+        assert cfg.outgoing.security == ConnectionSecurity.TLS
+
+    def test_init_with_legacy_smtp_start_ssl(self):
+        """init() with smtp_start_ssl should pass start_ssl to outgoing server."""
+        cfg = EmailSettings.init(
+            account_name="test",
+            full_name="Test",
+            email_address="test@test.com",
+            user_name="u",
+            password="p",
+            imap_host="imap.test.com",
+            smtp_host="smtp.test.com",
+            smtp_start_ssl=True,
+        )
+        assert cfg.outgoing.security == ConnectionSecurity.STARTTLS
