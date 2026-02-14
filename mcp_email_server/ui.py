@@ -1,6 +1,6 @@
 import gradio as gr
 
-from mcp_email_server.config import EmailSettings, get_settings, store_settings
+from mcp_email_server.config import ConnectionSecurity, EmailSettings, get_settings, store_settings
 from mcp_email_server.tools.installer import install_claude_desktop, is_installed, need_update, uninstall_claude_desktop
 
 
@@ -122,7 +122,13 @@ def create_ui():  # noqa: C901
                     gr.Markdown("### IMAP Settings")
                     imap_host = gr.Textbox(label="IMAP Host", placeholder="e.g. imap.example.com")
                     imap_port = gr.Number(label="IMAP Port", value=993)
-                    imap_ssl = gr.Checkbox(label="Use SSL", value=True)
+                    imap_security = gr.Dropdown(
+                        label="Connection Security",
+                        choices=["tls", "starttls", "none"],
+                        value="tls",
+                        info="TLS (port 993) | STARTTLS (port 143) | None (not recommended)",
+                    )
+                    imap_verify_ssl = gr.Checkbox(label="Verify SSL Certificate", value=True)
                     imap_user_name = gr.Textbox(
                         label="IMAP Username (optional)", placeholder="Leave empty to use the same as above"
                     )
@@ -137,8 +143,13 @@ def create_ui():  # noqa: C901
                     gr.Markdown("### SMTP Settings")
                     smtp_host = gr.Textbox(label="SMTP Host", placeholder="e.g. smtp.example.com")
                     smtp_port = gr.Number(label="SMTP Port", value=465)
-                    smtp_ssl = gr.Checkbox(label="Use SSL", value=True)
-                    smtp_start_ssl = gr.Checkbox(label="Start SSL", value=False)
+                    smtp_security = gr.Dropdown(
+                        label="Connection Security",
+                        choices=["tls", "starttls", "none"],
+                        value="tls",
+                        info="TLS (port 465) | STARTTLS (port 587) | None (not recommended)",
+                    )
+                    smtp_verify_ssl = gr.Checkbox(label="Verify SSL Certificate", value=True)
                     smtp_user_name = gr.Textbox(
                         label="SMTP Username (optional)", placeholder="Leave empty to use the same as above"
                     )
@@ -163,13 +174,14 @@ def create_ui():  # noqa: C901
                 password,
                 imap_host,
                 imap_port,
-                imap_ssl,
+                imap_security,
+                imap_verify_ssl,
                 imap_user_name,
                 imap_password,
                 smtp_host,
                 smtp_port,
-                smtp_ssl,
-                smtp_start_ssl,
+                smtp_security,
+                smtp_verify_ssl,
                 smtp_user_name,
                 smtp_password,
             ):
@@ -190,13 +202,14 @@ def create_ui():  # noqa: C901
                             password,
                             imap_host,
                             imap_port,
-                            imap_ssl,
+                            imap_security,
+                            imap_verify_ssl,
                             imap_user_name,
                             imap_password,
                             smtp_host,
                             smtp_port,
-                            smtp_ssl,
-                            smtp_start_ssl,
+                            smtp_security,
+                            smtp_verify_ssl,
                             smtp_user_name,
                             smtp_password,
                         )
@@ -216,13 +229,14 @@ def create_ui():  # noqa: C901
                             password,
                             imap_host,
                             imap_port,
-                            imap_ssl,
+                            imap_security,
+                            imap_verify_ssl,
                             imap_user_name,
                             imap_password,
                             smtp_host,
                             smtp_port,
-                            smtp_ssl,
-                            smtp_start_ssl,
+                            smtp_security,
+                            smtp_verify_ssl,
                             smtp_user_name,
                             smtp_password,
                         )
@@ -247,13 +261,14 @@ def create_ui():  # noqa: C901
                                 password,
                                 imap_host,
                                 imap_port,
-                                imap_ssl,
+                                imap_security,
+                                imap_verify_ssl,
                                 imap_user_name,
                                 imap_password,
                                 smtp_host,
                                 smtp_port,
-                                smtp_ssl,
-                                smtp_start_ssl,
+                                smtp_security,
+                                smtp_verify_ssl,
                                 smtp_user_name,
                                 smtp_password,
                             )
@@ -268,10 +283,11 @@ def create_ui():  # noqa: C901
                         imap_host=imap_host,
                         smtp_host=smtp_host,
                         imap_port=int(imap_port),
-                        imap_ssl=imap_ssl,
+                        imap_security=ConnectionSecurity(imap_security),
+                        imap_verify_ssl=imap_verify_ssl,
                         smtp_port=int(smtp_port),
-                        smtp_ssl=smtp_ssl,
-                        smtp_start_ssl=smtp_start_ssl,
+                        smtp_security=ConnectionSecurity(smtp_security),
+                        smtp_verify_ssl=smtp_verify_ssl,
                         imap_user_name=imap_user_name if imap_user_name else None,
                         imap_password=imap_password if imap_password else None,
                         smtp_user_name=smtp_user_name if smtp_user_name else None,
@@ -300,13 +316,14 @@ def create_ui():  # noqa: C901
                         "",  # Clear password
                         "",  # Clear imap_host
                         993,  # Reset imap_port
-                        True,  # Reset imap_ssl
+                        "tls",  # Reset imap_security
+                        True,  # Reset imap_verify_ssl
                         "",  # Clear imap_user_name
                         "",  # Clear imap_password
                         "",  # Clear smtp_host
                         465,  # Reset smtp_port
-                        True,  # Reset smtp_ssl
-                        False,  # Reset smtp_start_ssl
+                        "tls",  # Reset smtp_security
+                        True,  # Reset smtp_verify_ssl
                         "",  # Clear smtp_user_name
                         "",  # Clear smtp_password
                     )
@@ -325,13 +342,14 @@ def create_ui():  # noqa: C901
                         password,
                         imap_host,
                         imap_port,
-                        imap_ssl,
+                        imap_security,
+                        imap_verify_ssl,
                         imap_user_name,
                         imap_password,
                         smtp_host,
                         smtp_port,
-                        smtp_ssl,
-                        smtp_start_ssl,
+                        smtp_security,
+                        smtp_verify_ssl,
                         smtp_user_name,
                         smtp_password,
                     )
@@ -347,13 +365,14 @@ def create_ui():  # noqa: C901
                     password,
                     imap_host,
                     imap_port,
-                    imap_ssl,
+                    imap_security,
+                    imap_verify_ssl,
                     imap_user_name,
                     imap_password,
                     smtp_host,
                     smtp_port,
-                    smtp_ssl,
-                    smtp_start_ssl,
+                    smtp_security,
+                    smtp_verify_ssl,
                     smtp_user_name,
                     smtp_password,
                 ],
@@ -369,13 +388,14 @@ def create_ui():  # noqa: C901
                     password,
                     imap_host,
                     imap_port,
-                    imap_ssl,
+                    imap_security,
+                    imap_verify_ssl,
                     imap_user_name,
                     imap_password,
                     smtp_host,
                     smtp_port,
-                    smtp_ssl,
-                    smtp_start_ssl,
+                    smtp_security,
+                    smtp_verify_ssl,
                     smtp_user_name,
                     smtp_password,
                 ],
