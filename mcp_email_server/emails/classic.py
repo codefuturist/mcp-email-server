@@ -776,6 +776,12 @@ class EmailClient:
         if references:
             msg["References"] = references
 
+        # Set Date and Message-Id headers so the same values appear in both
+        # the SMTP-sent copy and the IMAP Sent folder copy
+        msg["Date"] = email.utils.formatdate(localtime=True)
+        sender_domain = self.sender.rsplit("@", 1)[-1].rstrip(">")
+        msg["Message-Id"] = email.utils.make_msgid(domain=sender_domain)
+
         # Note: BCC recipients are not added to headers (they remain hidden)
         # but will be included in the actual recipients for SMTP delivery
 

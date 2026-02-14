@@ -328,6 +328,67 @@ class TestEmailClient:
             assert "bcc@example.com" in recipients
 
 
+class TestSendEmailMessageIdAndDate:
+    @pytest.mark.asyncio
+    async def test_send_email_sets_message_id_and_date(self, email_client):
+        """Test that send_email sets Message-Id and Date headers."""
+        mock_smtp = AsyncMock()
+        mock_smtp.__aenter__.return_value = mock_smtp
+        mock_smtp.__aexit__.return_value = None
+        mock_smtp.login = AsyncMock()
+        mock_smtp.send_message = AsyncMock()
+
+        with patch("aiosmtplib.SMTP", return_value=mock_smtp):
+            msg = await email_client.send_email(
+                recipients=["recipient@example.com"],
+                subject="Test Subject",
+                body="Test Body",
+            )
+
+            assert msg["Message-Id"] is not None
+            assert "@example.com>" in msg["Message-Id"]
+            assert msg["Date"] is not None
+
+    @pytest.mark.asyncio
+    async def test_send_email_message_id_uses_sender_domain(self, email_server):
+        """Test that Message-Id domain is extracted from the sender address."""
+        client = EmailClient(email_server, sender="user@getsequel.app")
+        mock_smtp = AsyncMock()
+        mock_smtp.__aenter__.return_value = mock_smtp
+        mock_smtp.__aexit__.return_value = None
+        mock_smtp.login = AsyncMock()
+        mock_smtp.send_message = AsyncMock()
+
+        with patch("aiosmtplib.SMTP", return_value=mock_smtp):
+            msg = await client.send_email(
+                recipients=["recipient@example.com"],
+                subject="Test",
+                body="Body",
+            )
+
+            assert "@getsequel.app>" in msg["Message-Id"]
+
+    @pytest.mark.asyncio
+    async def test_send_email_same_message_on_smtp_and_return(self, email_client):
+        """Test that the same msg object (with Message-Id) is sent and returned."""
+        mock_smtp = AsyncMock()
+        mock_smtp.__aenter__.return_value = mock_smtp
+        mock_smtp.__aexit__.return_value = None
+        mock_smtp.login = AsyncMock()
+        mock_smtp.send_message = AsyncMock()
+
+        with patch("aiosmtplib.SMTP", return_value=mock_smtp):
+            returned_msg = await email_client.send_email(
+                recipients=["recipient@example.com"],
+                subject="Test",
+                body="Body",
+            )
+
+            sent_msg = mock_smtp.send_message.call_args[0][0]
+            assert sent_msg["Message-Id"] == returned_msg["Message-Id"]
+            assert sent_msg["Date"] == returned_msg["Date"]
+
+
 class TestParseEmailData:
     def test_parse_email_extracts_message_id(self, email_client):
         """Test that Message-ID header is extracted during parsing."""
