@@ -500,3 +500,170 @@ class TestValidatorEdgeCases:
         # Re-validate the same instance (triggers non-dict path)
         copy = EmailServer.model_validate(server)
         assert copy.security == ConnectionSecurity.TLS
+
+
+class TestConnectionTest:
+    """Tests for test_imap_connection and test_smtp_connection helpers."""
+
+    @pytest.mark.asyncio
+    async def test_imap_connection_success(self):
+        from mcp_email_server.emails.classic import test_imap_connection
+
+        server = EmailServer(user_name="u", password="p", host="imap.example.com", port=993)
+        mock_imap = AsyncMock()
+        mock_imap.login = AsyncMock(return_value=MagicMock(result="OK"))
+        mock_imap.logout = AsyncMock()
+
+        with patch("mcp_email_server.emails.classic._create_imap_connection", return_value=mock_imap):
+            result = await test_imap_connection(server)
+            assert "✅" in result
+            assert "imap.example.com:993" in result
+
+    @pytest.mark.asyncio
+    async def test_imap_connection_auth_failure(self):
+        from mcp_email_server.emails.classic import test_imap_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=993)
+        mock_imap = AsyncMock()
+        mock_imap.login = AsyncMock(return_value=MagicMock(result="NO"))
+        mock_imap.logout = AsyncMock()
+
+        with patch("mcp_email_server.emails.classic._create_imap_connection", return_value=mock_imap):
+            result = await test_imap_connection(server)
+            assert "❌" in result
+            assert "authentication failed" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_imap_connection_refused(self):
+        from mcp_email_server.emails.classic import test_imap_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=993)
+
+        with patch(
+            "mcp_email_server.emails.classic._create_imap_connection",
+            side_effect=ConnectionRefusedError(),
+        ):
+            result = await test_imap_connection(server)
+            assert "❌" in result
+            assert "Connection refused" in result
+
+    @pytest.mark.asyncio
+    async def test_imap_connection_ssl_error(self):
+        from mcp_email_server.emails.classic import test_imap_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=993)
+
+        with patch(
+            "mcp_email_server.emails.classic._create_imap_connection",
+            side_effect=ssl.SSLCertVerificationError(),
+        ):
+            result = await test_imap_connection(server)
+            assert "❌" in result
+            assert "SSL certificate" in result
+
+    @pytest.mark.asyncio
+    async def test_imap_connection_timeout(self):
+        from mcp_email_server.emails.classic import test_imap_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=993)
+
+        with patch(
+            "mcp_email_server.emails.classic._create_imap_connection",
+            side_effect=asyncio.TimeoutError(),
+        ):
+            result = await test_imap_connection(server)
+            assert "❌" in result
+            assert "timed out" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_imap_connection_starttls_not_supported(self):
+        from mcp_email_server.emails.classic import test_imap_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=143, security="starttls")
+
+        with patch(
+            "mcp_email_server.emails.classic._create_imap_connection",
+            side_effect=OSError("IMAP server does not advertise STARTTLS capability"),
+        ):
+            result = await test_imap_connection(server)
+            assert "❌" in result
+            assert "STARTTLS" in result
+
+    @pytest.mark.asyncio
+    async def test_smtp_connection_success(self):
+        from mcp_email_server.emails.classic import test_smtp_connection
+
+        server = EmailServer(user_name="u", password="p", host="smtp.example.com", port=465)
+        mock_smtp = AsyncMock()
+        mock_smtp.connect = AsyncMock()
+        mock_smtp.login = AsyncMock()
+        mock_smtp.quit = AsyncMock()
+
+        with patch("mcp_email_server.emails.classic.aiosmtplib.SMTP", return_value=mock_smtp):
+            result = await test_smtp_connection(server)
+            assert "✅" in result
+            assert "smtp.example.com:465" in result
+
+    @pytest.mark.asyncio
+    async def test_smtp_connection_auth_failure(self):
+        import aiosmtplib
+
+        from mcp_email_server.emails.classic import test_smtp_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=465)
+        mock_smtp = AsyncMock()
+        mock_smtp.connect = AsyncMock()
+        mock_smtp.login = AsyncMock(side_effect=aiosmtplib.SMTPAuthenticationError(535, "Authentication failed"))
+        mock_smtp.quit = AsyncMock()
+
+        with patch("mcp_email_server.emails.classic.aiosmtplib.SMTP", return_value=mock_smtp):
+            result = await test_smtp_connection(server)
+            assert "❌" in result
+            assert "authentication failed" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_smtp_connection_refused(self):
+        from mcp_email_server.emails.classic import test_smtp_connection
+
+        server = EmailServer(user_name="u", password="p", host="h", port=465)
+        mock_smtp = AsyncMock()
+        mock_smtp.connect = AsyncMock(side_effect=ConnectionRefusedError())
+
+        with patch("mcp_email_server.emails.classic.aiosmtplib.SMTP", return_value=mock_smtp):
+            result = await test_smtp_connection(server)
+            assert "❌" in result
+            assert "Connection refused" in result
+
+
+class TestUpdateEmail:
+    """Tests for Settings.update_email method."""
+
+    def test_update_email_replaces_existing(self):
+        from mcp_email_server.config import Settings
+
+        settings = Settings(emails=[], providers=[])
+        original = EmailSettings.init(
+            account_name="test",
+            full_name="Old",
+            email_address="old@test.com",
+            user_name="u",
+            password="p",
+            imap_host="h",
+            smtp_host="h",
+        )
+        settings.add_email(original)
+        assert settings.emails[0].full_name == "Old"
+
+        updated = EmailSettings.init(
+            account_name="test",
+            full_name="New",
+            email_address="new@test.com",
+            user_name="u",
+            password="p",
+            imap_host="h",
+            smtp_host="h",
+        )
+        settings.update_email(updated)
+        assert len(settings.emails) == 1
+        assert settings.emails[0].full_name == "New"
+        assert settings.emails[0].email_address == "new@test.com"

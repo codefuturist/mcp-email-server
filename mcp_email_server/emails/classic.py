@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import email.utils
 import mimetypes
 import re
@@ -163,6 +164,66 @@ async def _create_imap_connection(
         await _imap_starttls(imap, ssl_context, server.host)
 
     return imap
+
+
+async def test_imap_connection(server: EmailServer, timeout: int = 10) -> str:
+    """Test IMAP connection and login. Returns a user-friendly status message."""
+    try:
+        imap = await asyncio.wait_for(_create_imap_connection(server), timeout=timeout)
+        try:
+            response = await asyncio.wait_for(imap.login(server.user_name, server.password), timeout=timeout)
+            if response.result != "OK":
+                return f"❌ IMAP authentication failed: {response.result}"
+            return f"✅ IMAP connection successful ({server.host}:{server.port}, security: {server.security.value})"
+        finally:
+            with contextlib.suppress(Exception):
+                await imap.logout()
+    except ssl.SSLCertVerificationError:
+        return "❌ SSL certificate verification failed. Disable 'Verify SSL Certificate' or check your certificate."
+    except ConnectionRefusedError:
+        return f"❌ Connection refused at {server.host}:{server.port}. Check host and port."
+    except (TimeoutError, asyncio.TimeoutError):
+        return f"❌ Connection timed out ({server.host}:{server.port}). Check host, port, and firewall."
+    except OSError as e:
+        if "STARTTLS" in str(e):
+            return "❌ Server does not support STARTTLS. Try 'tls' or 'none' security mode."
+        return f"❌ IMAP error: {e}"
+    except Exception as e:
+        return f"❌ IMAP error: {e}"
+
+
+async def test_smtp_connection(server: EmailServer, timeout: int = 10) -> str:
+    """Test SMTP connection and login. Returns a user-friendly status message."""
+    use_tls = server.security == ConnectionSecurity.TLS
+    start_tls = server.security == ConnectionSecurity.STARTTLS
+    ssl_context = _create_smtp_ssl_context(server.verify_ssl)
+
+    try:
+        smtp = aiosmtplib.SMTP(
+            hostname=server.host,
+            port=server.port,
+            use_tls=use_tls,
+            start_tls=start_tls,
+            tls_context=ssl_context,
+            timeout=timeout,
+        )
+        await asyncio.wait_for(smtp.connect(), timeout=timeout)
+        try:
+            await asyncio.wait_for(smtp.login(server.user_name, server.password), timeout=timeout)
+            return f"✅ SMTP connection successful ({server.host}:{server.port}, security: {server.security.value})"
+        finally:
+            with contextlib.suppress(Exception):
+                await smtp.quit()
+    except ssl.SSLCertVerificationError:
+        return "❌ SSL certificate verification failed. Disable 'Verify SSL Certificate' or check your certificate."
+    except ConnectionRefusedError:
+        return f"❌ Connection refused at {server.host}:{server.port}. Check host and port."
+    except (TimeoutError, asyncio.TimeoutError):
+        return f"❌ Connection timed out ({server.host}:{server.port}). Check host, port, and firewall."
+    except aiosmtplib.SMTPAuthenticationError as e:
+        return f"❌ SMTP authentication failed: {e.message}"
+    except Exception as e:
+        return f"❌ SMTP error: {e}"
 
 
 class EmailClient:

@@ -1,46 +1,70 @@
+import asyncio
+
 import gradio as gr
 
-from mcp_email_server.config import ConnectionSecurity, EmailSettings, get_settings, store_settings
+from mcp_email_server.config import ConnectionSecurity, EmailServer, EmailSettings, get_settings, store_settings
+from mcp_email_server.emails.classic import test_imap_connection, test_smtp_connection
 from mcp_email_server.tools.installer import install_claude_desktop, is_installed, need_update, uninstall_claude_desktop
+
+PASSWORD_PLACEHOLDER = "********"  # noqa: S105
+IMAP_PORT_MAP = {"tls": 993, "starttls": 143, "none": 143}
+SMTP_PORT_MAP = {"tls": 465, "starttls": 587, "none": 25}
+
+
+def _get_form_defaults():
+    """Return default values for all form fields."""
+    return (
+        "",  # account_name
+        "",  # full_name
+        "",  # email_address
+        "",  # user_name
+        "",  # password
+        "",  # imap_host
+        993,  # imap_port
+        "tls",  # imap_security
+        True,  # imap_verify_ssl
+        "",  # imap_user_name
+        "",  # imap_password
+        "",  # smtp_host
+        465,  # smtp_port
+        "tls",  # smtp_security
+        True,  # smtp_verify_ssl
+        "",  # smtp_user_name
+        "",  # smtp_password
+        True,  # same_security
+    )
 
 
 def create_ui():  # noqa: C901
-    # Create a Gradio interface
     with gr.Blocks(title="Email Settings Configuration") as app:
         gr.Markdown("# Email Settings Configuration")
 
-        # Function to get current accounts
+        # Hidden state to track edit mode
+        editing_account = gr.State(value=None)
+
         def get_current_accounts():
             settings = get_settings(reload=True)
-            email_accounts = [email.account_name for email in settings.emails]
-            return email_accounts
+            return [email.account_name for email in settings.emails]
 
-        # Function to update account list display
         def update_account_list():
             settings = get_settings(reload=True)
             email_accounts = [email.account_name for email in settings.emails]
 
             if email_accounts:
-                # Create a detailed list of accounts with more information
                 accounts_details = []
-                for email in settings.emails:
+                for email_cfg in settings.emails:
                     details = [
-                        f"**Account Name:** {email.account_name}",
-                        f"**Full Name:** {email.full_name}",
-                        f"**Email Address:** {email.email_address}",
+                        f"**Account Name:** {email_cfg.account_name}",
+                        f"**Full Name:** {email_cfg.full_name}",
+                        f"**Email Address:** {email_cfg.email_address}",
                     ]
-
-                    if hasattr(email, "description") and email.description:
-                        details.append(f"**Description:** {email.description}")
-
-                    # Add IMAP/SMTP provider info if available
-                    if hasattr(email, "incoming") and hasattr(email.incoming, "host"):
-                        details.append(f"**IMAP Provider:** {email.incoming.host}")
-
-                    if hasattr(email, "outgoing") and hasattr(email.outgoing, "host"):
-                        details.append(f"**SMTP Provider:** {email.outgoing.host}")
-
-                    accounts_details.append("### " + email.account_name + "\n" + "\n".join(details) + "\n")
+                    if hasattr(email_cfg, "description") and email_cfg.description:
+                        details.append(f"**Description:** {email_cfg.description}")
+                    if hasattr(email_cfg, "incoming") and hasattr(email_cfg.incoming, "host"):
+                        details.append(f"**IMAP Provider:** {email_cfg.incoming.host}")
+                    if hasattr(email_cfg, "outgoing") and hasattr(email_cfg.outgoing, "host"):
+                        details.append(f"**SMTP Provider:** {email_cfg.outgoing.host}")
+                    accounts_details.append("### " + email_cfg.account_name + "\n" + "\n".join(details) + "\n")
 
                 accounts_md = "\n".join(accounts_details)
                 return (
@@ -55,57 +79,43 @@ def create_ui():  # noqa: C901
                     gr.update(visible=False),
                 )
 
-        # Display current email accounts and allow deletion
+        # --- Current Email Accounts ---
         with gr.Accordion("Current Email Accounts", open=True):
-            # Display the list of accounts
             accounts_display = gr.Markdown("")
-
-            # Create a dropdown to select account to delete
             account_to_delete = gr.Dropdown(choices=[], label="Select Account to Delete", interactive=True)
-
-            # Status message for deletion
             delete_status = gr.Markdown("")
-
-            # Delete button
             delete_btn = gr.Button("Delete Selected Account")
 
-            # Function to delete an account
             def delete_email_account(account_name):
                 if not account_name:
                     return "Error: Please select an account to delete.", *update_account_list()
-
                 try:
-                    # Get current settings
                     settings = get_settings()
-
-                    # Delete the account
                     settings.delete_email(account_name)
-
-                    # Store settings
                     store_settings(settings)
-
-                    # Return success message and update the UI
                     return f"Success: Email account '{account_name}' has been deleted.", *update_account_list()
                 except Exception as e:
                     return f"Error: {e!s}", *update_account_list()
 
-            # Connect the delete button to the delete function
             delete_btn.click(
                 fn=delete_email_account,
                 inputs=[account_to_delete],
                 outputs=[delete_status, accounts_display, account_to_delete, delete_btn],
             )
+            app.load(fn=update_account_list, inputs=None, outputs=[accounts_display, account_to_delete, delete_btn])
 
-            # Initialize the account list
-            app.load(
-                fn=update_account_list,
-                inputs=None,
-                outputs=[accounts_display, account_to_delete, delete_btn],
+        # --- Add / Edit Email Account ---
+        with gr.Accordion("Add / Edit Email Account", open=True):
+            gr.Markdown("### Email Account Settings")
+
+            # Edit existing account dropdown
+            edit_account = gr.Dropdown(
+                choices=[],
+                label="Edit Existing Account",
+                interactive=True,
+                info="Select an account to edit, or leave empty to create a new one",
             )
-
-        # Form for adding a new email account
-        with gr.Accordion("Add New Email Account", open=True):
-            gr.Markdown("### Add New Email Account")
+            clear_btn = gr.Button("Clear / New Account", size="sm")
 
             # Basic account information
             account_name = gr.Textbox(label="Account Name", placeholder="e.g. work_email")
@@ -116,10 +126,10 @@ def create_ui():  # noqa: C901
             user_name = gr.Textbox(label="Username", placeholder="e.g. john@example.com")
             password = gr.Textbox(label="Password", type="password")
 
-            # IMAP settings
+            # IMAP and SMTP settings
             with gr.Row():
                 with gr.Column():
-                    gr.Markdown("### IMAP Settings")
+                    gr.Markdown("### IMAP Settings (Incoming)")
                     imap_host = gr.Textbox(label="IMAP Host", placeholder="e.g. imap.example.com")
                     imap_port = gr.Number(label="IMAP Port", value=993)
                     imap_security = gr.Dropdown(
@@ -138,25 +148,23 @@ def create_ui():  # noqa: C901
                         placeholder="Leave empty to use the same as above",
                     )
 
-                    # Auto-update IMAP port when security mode changes
-                    def update_imap_port(security):
-                        port_map = {"tls": 993, "starttls": 143, "none": 143}
-                        return port_map.get(security, 993)
-
-                    imap_security.change(fn=update_imap_port, inputs=[imap_security], outputs=[imap_port])
-
-                # SMTP settings
                 with gr.Column():
-                    gr.Markdown("### SMTP Settings")
+                    gr.Markdown("### SMTP Settings (Outgoing)")
                     smtp_host = gr.Textbox(label="SMTP Host", placeholder="e.g. smtp.example.com")
                     smtp_port = gr.Number(label="SMTP Port", value=465)
+                    same_security = gr.Checkbox(
+                        label="Use same security settings as IMAP",
+                        value=True,
+                        info="When checked, SMTP security mirrors IMAP settings",
+                    )
                     smtp_security = gr.Dropdown(
                         label="Connection Security",
                         choices=["tls", "starttls", "none"],
                         value="tls",
                         info="TLS (port 465) | STARTTLS (port 587) | None (not recommended)",
+                        interactive=False,
                     )
-                    smtp_verify_ssl = gr.Checkbox(label="Verify SSL Certificate", value=True)
+                    smtp_verify_ssl = gr.Checkbox(label="Verify SSL Certificate", value=True, interactive=False)
                     smtp_user_name = gr.Textbox(
                         label="SMTP Username (optional)", placeholder="Leave empty to use the same as above"
                     )
@@ -166,21 +174,166 @@ def create_ui():  # noqa: C901
                         placeholder="Leave empty to use the same as above",
                     )
 
-                    # Auto-update SMTP port when security mode changes
-                    def update_smtp_port(security):
-                        port_map = {"tls": 465, "starttls": 587, "none": 25}
-                        return port_map.get(security, 465)
+            # --- Auto-update port on security change ---
+            def update_imap_port(security):
+                return IMAP_PORT_MAP.get(security, 993)
 
-                    smtp_security.change(fn=update_smtp_port, inputs=[smtp_security], outputs=[smtp_port])
+            def on_imap_security_change(security, same_sec):
+                """Update IMAP port, and mirror to SMTP if same_security is checked."""
+                imap_p = IMAP_PORT_MAP.get(security, 993)
+                if same_sec:
+                    smtp_p = SMTP_PORT_MAP.get(security, 465)
+                    return imap_p, security, True, smtp_p
+                return imap_p, gr.update(), gr.update(), gr.update()
 
-            # Status message
-            status_message = gr.Markdown("")
+            imap_security.change(
+                fn=on_imap_security_change,
+                inputs=[imap_security, same_security],
+                outputs=[imap_port, smtp_security, smtp_verify_ssl, smtp_port],
+            )
 
-            # Save button
-            save_btn = gr.Button("Save Email Settings")
+            def on_imap_verify_ssl_change(verify, same_sec):
+                if same_sec:
+                    return verify
+                return gr.update()
 
-            # Function to save settings
-            def save_email_settings(
+            imap_verify_ssl.change(
+                fn=on_imap_verify_ssl_change,
+                inputs=[imap_verify_ssl, same_security],
+                outputs=[smtp_verify_ssl],
+            )
+
+            def on_same_security_toggle(same_sec, imap_sec, imap_verify):
+                """Toggle SMTP security fields interactive state and sync values."""
+                if same_sec:
+                    smtp_p = SMTP_PORT_MAP.get(imap_sec, 465)
+                    return (
+                        gr.update(value=imap_sec, interactive=False),
+                        gr.update(value=imap_verify, interactive=False),
+                        smtp_p,
+                    )
+                return (
+                    gr.update(interactive=True),
+                    gr.update(interactive=True),
+                    gr.update(),
+                )
+
+            same_security.change(
+                fn=on_same_security_toggle,
+                inputs=[same_security, imap_security, imap_verify_ssl],
+                outputs=[smtp_security, smtp_verify_ssl, smtp_port],
+            )
+
+            def update_smtp_port(security):
+                return SMTP_PORT_MAP.get(security, 465)
+
+            smtp_security.change(fn=update_smtp_port, inputs=[smtp_security], outputs=[smtp_port])
+
+            # --- Test Connection Buttons ---
+            with gr.Row():
+                test_imap_btn = gr.Button("🔌 Test IMAP Connection", size="sm")
+                test_smtp_btn = gr.Button("🔌 Test SMTP Connection", size="sm")
+            test_status = gr.Markdown("")
+
+            def _build_server(host, port, user, pwd, security, verify_ssl):
+                return EmailServer(
+                    user_name=user,
+                    password=pwd,
+                    host=host,
+                    port=int(port),
+                    security=security,
+                    verify_ssl=verify_ssl,
+                )
+
+            def run_imap_test(
+                imap_host,
+                imap_port,
+                imap_security,
+                imap_verify_ssl,
+                user_name,
+                password,
+                imap_user_name,
+                imap_password,
+            ):
+                if not imap_host:
+                    return "❌ Please enter an IMAP host."
+                effective_user = imap_user_name if imap_user_name else user_name
+                effective_pass = imap_password if imap_password else password
+                if not effective_user or not effective_pass:
+                    return "❌ Please enter username and password."
+                try:
+                    server = _build_server(
+                        imap_host,
+                        imap_port,
+                        effective_user,
+                        effective_pass,
+                        imap_security,
+                        imap_verify_ssl,
+                    )
+                    return asyncio.run(test_imap_connection(server))
+                except Exception as e:
+                    return f"❌ Error: {e}"
+
+            def run_smtp_test(
+                smtp_host,
+                smtp_port,
+                smtp_security,
+                smtp_verify_ssl,
+                user_name,
+                password,
+                smtp_user_name,
+                smtp_password,
+            ):
+                if not smtp_host:
+                    return "❌ Please enter an SMTP host."
+                effective_user = smtp_user_name if smtp_user_name else user_name
+                effective_pass = smtp_password if smtp_password else password
+                if not effective_user or not effective_pass:
+                    return "❌ Please enter username and password."
+                try:
+                    server = _build_server(
+                        smtp_host,
+                        smtp_port,
+                        effective_user,
+                        effective_pass,
+                        smtp_security,
+                        smtp_verify_ssl,
+                    )
+                    return asyncio.run(test_smtp_connection(server))
+                except Exception as e:
+                    return f"❌ Error: {e}"
+
+            test_imap_btn.click(
+                fn=run_imap_test,
+                inputs=[
+                    imap_host,
+                    imap_port,
+                    imap_security,
+                    imap_verify_ssl,
+                    user_name,
+                    password,
+                    imap_user_name,
+                    imap_password,
+                ],
+                outputs=[test_status],
+            )
+            test_smtp_btn.click(
+                fn=run_smtp_test,
+                inputs=[
+                    smtp_host,
+                    smtp_port,
+                    smtp_security,
+                    smtp_verify_ssl,
+                    user_name,
+                    password,
+                    smtp_user_name,
+                    smtp_password,
+                ],
+                outputs=[test_status],
+            )
+
+            # --- Load existing account for editing ---
+            all_form_fields = [
                 account_name,
                 full_name,
                 email_address,
@@ -198,222 +351,210 @@ def create_ui():  # noqa: C901
                 smtp_verify_ssl,
                 smtp_user_name,
                 smtp_password,
-            ):
-                try:
-                    # Validate required fields
-                    if not account_name or not full_name or not email_address or not user_name or not password:
-                        # Get account list update
-                        account_md, account_choices, btn_visible = update_account_list()
+                same_security,
+            ]
+
+            def load_account(selected_account):
+                """Load an existing account's settings into the form."""
+                if not selected_account:
+                    return (None, *_get_form_defaults())
+
+                settings = get_settings(reload=True)
+                for email_cfg in settings.emails:
+                    if email_cfg.account_name == selected_account:
+                        inc = email_cfg.incoming
+                        out = email_cfg.outgoing
+                        same_sec = inc.security == out.security and inc.verify_ssl == out.verify_ssl
                         return (
-                            "Error: Please fill in all required fields.",
-                            account_md,
-                            account_choices,
-                            btn_visible,
-                            account_name,
-                            full_name,
-                            email_address,
-                            user_name,
-                            password,
-                            imap_host,
-                            imap_port,
-                            imap_security,
-                            imap_verify_ssl,
-                            imap_user_name,
-                            imap_password,
-                            smtp_host,
-                            smtp_port,
-                            smtp_security,
-                            smtp_verify_ssl,
-                            smtp_user_name,
-                            smtp_password,
+                            selected_account,  # editing_account state
+                            email_cfg.account_name,
+                            email_cfg.full_name,
+                            email_cfg.email_address,
+                            inc.user_name,
+                            PASSWORD_PLACEHOLDER,
+                            inc.host,
+                            inc.port,
+                            inc.security.value,
+                            inc.verify_ssl,
+                            "" if inc.user_name == out.user_name else out.user_name,
+                            "",
+                            out.host,
+                            out.port,
+                            out.security.value,
+                            out.verify_ssl,
+                            "" if out.user_name == inc.user_name else out.user_name,
+                            "",
+                            same_sec,
                         )
+
+                return (None, *_get_form_defaults())
+
+            edit_account.change(
+                fn=load_account,
+                inputs=[edit_account],
+                outputs=[editing_account, *all_form_fields],
+            )
+
+            def clear_form():
+                return (None, gr.update(value=None), *_get_form_defaults())
+
+            clear_btn.click(
+                fn=clear_form,
+                inputs=[],
+                outputs=[editing_account, edit_account, *all_form_fields],
+            )
+
+            # --- Status and Save ---
+            status_message = gr.Markdown("")
+            save_btn = gr.Button("Save Email Settings", variant="primary")
+
+            def _make_result(msg, form_values):
+                account_md, account_choices, btn_visible = update_account_list()
+                accounts = get_current_accounts()
+                return (
+                    msg,
+                    account_md,
+                    account_choices,
+                    btn_visible,
+                    gr.update(choices=accounts),
+                    *form_values,
+                )
+
+            def _resolve_passwords(editing, password, imap_password, smtp_password, settings):
+                """Resolve effective passwords, keeping existing ones if placeholder."""
+                effective_password = password
+                effective_imap_password = imap_password if imap_password else None
+                effective_smtp_password = smtp_password if smtp_password else None
+
+                if editing and password == PASSWORD_PLACEHOLDER:
+                    for email_cfg in settings.emails:
+                        if email_cfg.account_name == editing:
+                            effective_password = email_cfg.incoming.password
+                            break
+
+                return effective_password, effective_imap_password, effective_smtp_password
+
+            def save_email_settings(
+                editing,
+                account_name,
+                full_name,
+                email_address,
+                user_name,
+                password,
+                imap_host,
+                imap_port,
+                imap_security,
+                imap_verify_ssl,
+                imap_user_name,
+                imap_password,
+                smtp_host,
+                smtp_port,
+                smtp_security,
+                smtp_verify_ssl,
+                smtp_user_name,
+                smtp_password,
+                same_security_checked,
+            ):
+                form_vals = (
+                    account_name,
+                    full_name,
+                    email_address,
+                    user_name,
+                    password,
+                    imap_host,
+                    imap_port,
+                    imap_security,
+                    imap_verify_ssl,
+                    imap_user_name,
+                    imap_password,
+                    smtp_host,
+                    smtp_port,
+                    smtp_security,
+                    smtp_verify_ssl,
+                    smtp_user_name,
+                    smtp_password,
+                    same_security_checked,
+                )
+                try:
+                    if not account_name or not full_name or not email_address or not user_name:
+                        return _make_result("Error: Please fill in all required fields.", form_vals)
+
+                    is_editing = editing is not None
+                    if not is_editing and not password:
+                        return _make_result("Error: Password is required.", form_vals)
 
                     if not imap_host or not smtp_host:
-                        # Get account list update
-                        account_md, account_choices, btn_visible = update_account_list()
-                        return (
-                            "Error: IMAP and SMTP hosts are required.",
-                            account_md,
-                            account_choices,
-                            btn_visible,
-                            account_name,
-                            full_name,
-                            email_address,
-                            user_name,
-                            password,
-                            imap_host,
-                            imap_port,
-                            imap_security,
-                            imap_verify_ssl,
-                            imap_user_name,
-                            imap_password,
-                            smtp_host,
-                            smtp_port,
-                            smtp_security,
-                            smtp_verify_ssl,
-                            smtp_user_name,
-                            smtp_password,
-                        )
+                        return _make_result("Error: IMAP and SMTP hosts are required.", form_vals)
 
-                    # Get current settings
                     settings = get_settings()
 
-                    # Check if account name already exists
-                    for email in settings.emails:
-                        if email.account_name == account_name:
-                            # Get account list update
-                            account_md, account_choices, btn_visible = update_account_list()
-                            return (
-                                f"Error: Account name '{account_name}' already exists.",
-                                account_md,
-                                account_choices,
-                                btn_visible,
-                                account_name,
-                                full_name,
-                                email_address,
-                                user_name,
-                                password,
-                                imap_host,
-                                imap_port,
-                                imap_security,
-                                imap_verify_ssl,
-                                imap_user_name,
-                                imap_password,
-                                smtp_host,
-                                smtp_port,
-                                smtp_security,
-                                smtp_verify_ssl,
-                                smtp_user_name,
-                                smtp_password,
-                            )
+                    if not is_editing:
+                        for email_cfg in settings.emails:
+                            if email_cfg.account_name == account_name:
+                                return _make_result(f"Error: Account name '{account_name}' already exists.", form_vals)
 
-                    # Create new email settings
+                    effective_password, effective_imap_password, effective_smtp_password = _resolve_passwords(
+                        editing, password, imap_password, smtp_password, settings
+                    )
+
+                    effective_smtp_security = imap_security if same_security_checked else smtp_security
+                    effective_smtp_verify_ssl = imap_verify_ssl if same_security_checked else smtp_verify_ssl
+
                     email_settings = EmailSettings.init(
                         account_name=account_name,
                         full_name=full_name,
                         email_address=email_address,
                         user_name=user_name,
-                        password=password,
+                        password=effective_password,
                         imap_host=imap_host,
                         smtp_host=smtp_host,
                         imap_port=int(imap_port),
                         imap_security=ConnectionSecurity(imap_security),
                         imap_verify_ssl=imap_verify_ssl,
                         smtp_port=int(smtp_port),
-                        smtp_security=ConnectionSecurity(smtp_security),
-                        smtp_verify_ssl=smtp_verify_ssl,
+                        smtp_security=ConnectionSecurity(effective_smtp_security),
+                        smtp_verify_ssl=effective_smtp_verify_ssl,
                         imap_user_name=imap_user_name if imap_user_name else None,
-                        imap_password=imap_password if imap_password else None,
+                        imap_password=effective_imap_password,
                         smtp_user_name=smtp_user_name if smtp_user_name else None,
-                        smtp_password=smtp_password if smtp_password else None,
+                        smtp_password=effective_smtp_password,
                     )
 
-                    # Add to settings
-                    settings.add_email(email_settings)
+                    if is_editing:
+                        settings.update_email(email_settings)
+                        action = "updated"
+                    else:
+                        settings.add_email(email_settings)
+                        action = "added"
 
-                    # Store settings
                     store_settings(settings)
 
-                    # Get account list update
-                    account_md, account_choices, btn_visible = update_account_list()
-
-                    # Return success message, update the UI, and clear form fields
-                    return (
-                        f"Success: Email account '{account_name}' has been added.",
-                        account_md,
-                        account_choices,
-                        btn_visible,
-                        "",  # Clear account_name
-                        "",  # Clear full_name
-                        "",  # Clear email_address
-                        "",  # Clear user_name
-                        "",  # Clear password
-                        "",  # Clear imap_host
-                        993,  # Reset imap_port
-                        "tls",  # Reset imap_security
-                        True,  # Reset imap_verify_ssl
-                        "",  # Clear imap_user_name
-                        "",  # Clear imap_password
-                        "",  # Clear smtp_host
-                        465,  # Reset smtp_port
-                        "tls",  # Reset smtp_security
-                        True,  # Reset smtp_verify_ssl
-                        "",  # Clear smtp_user_name
-                        "",  # Clear smtp_password
+                    return _make_result(
+                        f"Success: Email account '{account_name}' has been {action}.",
+                        _get_form_defaults(),
                     )
                 except Exception as e:
-                    # Get account list update
-                    account_md, account_choices, btn_visible = update_account_list()
-                    return (
-                        f"Error: {e!s}",
-                        account_md,
-                        account_choices,
-                        btn_visible,
-                        account_name,
-                        full_name,
-                        email_address,
-                        user_name,
-                        password,
-                        imap_host,
-                        imap_port,
-                        imap_security,
-                        imap_verify_ssl,
-                        imap_user_name,
-                        imap_password,
-                        smtp_host,
-                        smtp_port,
-                        smtp_security,
-                        smtp_verify_ssl,
-                        smtp_user_name,
-                        smtp_password,
-                    )
+                    return _make_result(f"Error: {e!s}", form_vals)
 
-            # Connect the save button to the save function
             save_btn.click(
                 fn=save_email_settings,
-                inputs=[
-                    account_name,
-                    full_name,
-                    email_address,
-                    user_name,
-                    password,
-                    imap_host,
-                    imap_port,
-                    imap_security,
-                    imap_verify_ssl,
-                    imap_user_name,
-                    imap_password,
-                    smtp_host,
-                    smtp_port,
-                    smtp_security,
-                    smtp_verify_ssl,
-                    smtp_user_name,
-                    smtp_password,
-                ],
+                inputs=[editing_account, *all_form_fields],
                 outputs=[
                     status_message,
                     accounts_display,
                     account_to_delete,
                     delete_btn,
-                    account_name,
-                    full_name,
-                    email_address,
-                    user_name,
-                    password,
-                    imap_host,
-                    imap_port,
-                    imap_security,
-                    imap_verify_ssl,
-                    imap_user_name,
-                    imap_password,
-                    smtp_host,
-                    smtp_port,
-                    smtp_security,
-                    smtp_verify_ssl,
-                    smtp_user_name,
-                    smtp_password,
+                    edit_account,
+                    *all_form_fields,
                 ],
             )
+
+            # Initialize edit dropdown with current accounts
+            def init_edit_dropdown():
+                accounts = get_current_accounts()
+                return gr.update(choices=accounts)
+
+            app.load(fn=init_edit_dropdown, inputs=None, outputs=[edit_account])
 
         # Claude Desktop Integration
         with gr.Accordion("Claude Desktop Integration", open=True):

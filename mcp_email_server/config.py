@@ -386,6 +386,10 @@ class Settings(BaseSettings):
         """Use re-assigned for validation to work."""
         self.emails = [email, *self.emails]
 
+    def update_email(self, email: EmailSettings) -> None:
+        """Replace an existing email account by account_name (delete + add)."""
+        self.emails = [email if e.account_name == email.account_name else e for e in self.emails]
+
     def add_provider(self, provider: ProviderSettings) -> None:
         """Use re-assigned for validation to work."""
         self.providers = [provider, *self.providers]
