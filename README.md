@@ -63,24 +63,31 @@ You can also configure the email server using environment variables, which is pa
 
 #### Available Environment Variables
 
-| Variable                                      | Description                                            | Default       | Required |
-| --------------------------------------------- | ------------------------------------------------------ | ------------- | -------- |
-| `MCP_EMAIL_SERVER_ACCOUNT_NAME`               | Account identifier                                     | `"default"`   | No       |
-| `MCP_EMAIL_SERVER_FULL_NAME`                  | Display name                                           | Email prefix  | No       |
-| `MCP_EMAIL_SERVER_EMAIL_ADDRESS`              | Email address                                          | -             | Yes      |
-| `MCP_EMAIL_SERVER_USER_NAME`                  | Login username                                         | Same as email | No       |
-| `MCP_EMAIL_SERVER_PASSWORD`                   | Email password                                         | -             | Yes      |
-| `MCP_EMAIL_SERVER_IMAP_HOST`                  | IMAP server host                                       | -             | Yes      |
-| `MCP_EMAIL_SERVER_IMAP_PORT`                  | IMAP server port                                       | `993`         | No       |
-| `MCP_EMAIL_SERVER_IMAP_SECURITY`              | IMAP connection security: `tls`, `starttls`, or `none` | `tls`         | No       |
-| `MCP_EMAIL_SERVER_IMAP_VERIFY_SSL`            | Verify IMAP SSL certificates                           | `true`        | No       |
-| `MCP_EMAIL_SERVER_SMTP_HOST`                  | SMTP server host                                       | -             | Yes      |
-| `MCP_EMAIL_SERVER_SMTP_PORT`                  | SMTP server port                                       | `465`         | No       |
-| `MCP_EMAIL_SERVER_SMTP_SECURITY`              | SMTP connection security: `tls`, `starttls`, or `none` | `tls`         | No       |
-| `MCP_EMAIL_SERVER_SMTP_VERIFY_SSL`            | Verify SMTP SSL certificates                           | `true`        | No       |
-| `MCP_EMAIL_SERVER_ENABLE_ATTACHMENT_DOWNLOAD` | Enable attachment download                             | `false`       | No       |
-| `MCP_EMAIL_SERVER_SAVE_TO_SENT`               | Save sent emails to IMAP Sent folder                   | `true`        | No       |
-| `MCP_EMAIL_SERVER_SENT_FOLDER_NAME`           | Custom Sent folder name (auto-detect if not set)       | -             | No       |
+| Variable                                      | TOML Key                       | Description                                            | Default                                          | Required |
+| --------------------------------------------- | ------------------------------ | ------------------------------------------------------ | ------------------------------------------------ | -------- |
+| `MCP_EMAIL_SERVER_CONFIG_PATH`                | —                              | Path to TOML config file                               | `~/.config/zerolib/mcp_email_server/config.toml` | No       |
+| `MCP_EMAIL_SERVER_ACCOUNT_NAME`               | `emails[].account_name`        | Account identifier                                     | `"default"`                                      | No       |
+| `MCP_EMAIL_SERVER_FULL_NAME`                  | `emails[].full_name`           | Display name                                           | Email prefix                                     | No       |
+| `MCP_EMAIL_SERVER_EMAIL_ADDRESS`              | `emails[].email_address`       | Email address                                          | —                                                | Yes      |
+| `MCP_EMAIL_SERVER_USER_NAME`                  | `emails[].incoming.user_name`  | Login username (IMAP & SMTP)                           | Same as email                                    | No       |
+| `MCP_EMAIL_SERVER_PASSWORD`                   | `emails[].incoming.password`   | Email password (IMAP & SMTP)                           | —                                                | Yes      |
+| `MCP_EMAIL_SERVER_IMAP_HOST`                  | `emails[].incoming.host`       | IMAP server host                                       | —                                                | Yes      |
+| `MCP_EMAIL_SERVER_IMAP_PORT`                  | `emails[].incoming.port`       | IMAP server port                                       | `993`                                            | No       |
+| `MCP_EMAIL_SERVER_IMAP_SECURITY`              | `emails[].incoming.security`   | IMAP connection security: `tls`, `starttls`, or `none` | `tls`                                            | No       |
+| `MCP_EMAIL_SERVER_IMAP_VERIFY_SSL`            | `emails[].incoming.verify_ssl` | Verify IMAP SSL certificates                           | `true`                                           | No       |
+| `MCP_EMAIL_SERVER_IMAP_USER_NAME`             | `emails[].incoming.user_name`  | IMAP-specific username (overrides `USER_NAME`)         | Same as `USER_NAME`                              | No       |
+| `MCP_EMAIL_SERVER_IMAP_PASSWORD`              | `emails[].incoming.password`   | IMAP-specific password (overrides `PASSWORD`)          | Same as `PASSWORD`                               | No       |
+| `MCP_EMAIL_SERVER_SMTP_HOST`                  | `emails[].outgoing.host`       | SMTP server host                                       | —                                                | Yes      |
+| `MCP_EMAIL_SERVER_SMTP_PORT`                  | `emails[].outgoing.port`       | SMTP server port                                       | `465`                                            | No       |
+| `MCP_EMAIL_SERVER_SMTP_SECURITY`              | `emails[].outgoing.security`   | SMTP connection security: `tls`, `starttls`, or `none` | `tls`                                            | No       |
+| `MCP_EMAIL_SERVER_SMTP_VERIFY_SSL`            | `emails[].outgoing.verify_ssl` | Verify SMTP SSL certificates                           | `true`                                           | No       |
+| `MCP_EMAIL_SERVER_SMTP_USER_NAME`             | `emails[].outgoing.user_name`  | SMTP-specific username (overrides `USER_NAME`)         | Same as `USER_NAME`                              | No       |
+| `MCP_EMAIL_SERVER_SMTP_PASSWORD`              | `emails[].outgoing.password`   | SMTP-specific password (overrides `PASSWORD`)          | Same as `PASSWORD`                               | No       |
+| `MCP_EMAIL_SERVER_SAVE_TO_SENT`               | `emails[].save_to_sent`        | Save sent emails to IMAP Sent folder                   | `true`                                           | No       |
+| `MCP_EMAIL_SERVER_SENT_FOLDER_NAME`           | `emails[].sent_folder_name`    | Custom Sent folder name (auto-detect if not set)       | —                                                | No       |
+| `MCP_EMAIL_SERVER_ENABLE_ATTACHMENT_DOWNLOAD` | `enable_attachment_download`   | Enable attachment download                             | `false`                                          | No       |
+
+> **Note:** The `emails[].` prefix corresponds to `[[emails]]` in TOML (array of tables). See [TOML Configuration Reference](#toml-configuration-reference) for the full config structure.
 
 > **Deprecated:** `MCP_EMAIL_SERVER_IMAP_SSL`, `MCP_EMAIL_SERVER_SMTP_SSL`, and `MCP_EMAIL_SERVER_SMTP_START_SSL` still work for backward compatibility but are superseded by the `*_SECURITY` variables above.
 
@@ -93,6 +100,99 @@ The `security` field (or `*_SECURITY` env var) controls how the connection to th
 | `tls`      | **Implicit TLS** — encrypted from the first byte      | 993       | 465       |
 | `starttls` | **STARTTLS** — connect plaintext, then upgrade to TLS | 143       | 587       |
 | `none`     | **No encryption** — plaintext only (not recommended)  | 143       | 25        |
+
+### TOML Configuration Reference
+
+The configuration file is located at `~/.config/zerolib/mcp_email_server/config.toml` by default (override with `MCP_EMAIL_SERVER_CONFIG_PATH`). You can also configure settings via the UI: `uvx mcp-email-server@latest ui`
+
+#### Single Account
+
+```toml
+# Global settings
+enable_attachment_download = false  # Set to true to allow attachment downloads
+
+# Email account — use [[emails]] for each account
+[[emails]]
+account_name = "work"
+full_name = "John Doe"
+email_address = "john@example.com"
+save_to_sent = true              # Save sent emails to IMAP Sent folder
+# sent_folder_name = "Sent"     # Optional: override auto-detected Sent folder name
+
+# IMAP (incoming mail)
+[emails.incoming]
+host = "imap.gmail.com"
+port = 993
+user_name = "john@example.com"
+password = "your-app-password"
+security = "tls"                 # "tls" (default) | "starttls" | "none"
+verify_ssl = true                # Set to false for self-signed certificates
+
+# SMTP (outgoing mail)
+[emails.outgoing]
+host = "smtp.gmail.com"
+port = 465
+user_name = "john@example.com"
+password = "your-app-password"
+security = "tls"                 # "tls" (default) | "starttls" | "none"
+verify_ssl = true                # Set to false for self-signed certificates
+```
+
+#### Multiple Accounts
+
+Add multiple `[[emails]]` blocks to configure several email accounts. Each account has its own IMAP/SMTP settings and can use different security modes:
+
+```toml
+enable_attachment_download = true
+
+# Account 1: Work Gmail (Implicit TLS)
+[[emails]]
+account_name = "work"
+full_name = "John Doe"
+email_address = "john@company.com"
+save_to_sent = true
+
+[emails.incoming]
+host = "imap.gmail.com"
+port = 993
+user_name = "john@company.com"
+password = "gmail-app-password"
+security = "tls"
+verify_ssl = true
+
+[emails.outgoing]
+host = "smtp.gmail.com"
+port = 465
+user_name = "john@company.com"
+password = "gmail-app-password"
+security = "tls"
+verify_ssl = true
+
+# Account 2: Personal ProtonMail via Bridge (STARTTLS + self-signed certs)
+[[emails]]
+account_name = "personal"
+full_name = "John Doe"
+email_address = "john@proton.me"
+save_to_sent = true
+
+[emails.incoming]
+host = "127.0.0.1"
+port = 1143
+user_name = "john@proton.me"
+password = "bridge-password"
+security = "starttls"
+verify_ssl = false
+
+[emails.outgoing]
+host = "127.0.0.1"
+port = 1025
+user_name = "john@proton.me"
+password = "bridge-password"
+security = "starttls"
+verify_ssl = false
+```
+
+> **Tip:** Use `account_name` to distinguish accounts when calling MCP tools (e.g., `get_emails(account_name="work")`).
 
 ### Enabling Attachment Downloads
 
