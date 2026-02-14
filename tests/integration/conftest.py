@@ -165,4 +165,3 @@ def make_multipart_mail(
     msg.attach(part)
 
     return Mail(msg)
-

@@ -20,9 +20,7 @@ pytestmark = pytest.mark.docker
 
 async def _get_first_uid(imap_client) -> str:
     """Helper to get the first email UID from INBOX via metadata stream."""
-    async for email_data in imap_client.get_emails_metadata_stream(
-        mailbox="INBOX", page=1, page_size=1
-    ):
+    async for email_data in imap_client.get_emails_metadata_stream(mailbox="INBOX", page=1, page_size=1):
         return email_data.get("email_id") or email_data.get("uid")
     msg = "No emails found in INBOX"
     raise AssertionError(msg)
